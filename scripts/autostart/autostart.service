@@ -1,0 +1,11 @@
+[Unit]
+Description=Autostart
+
+[Service]
+Type=idle
+ExecStart=/usr/bin/autostart.sh
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
