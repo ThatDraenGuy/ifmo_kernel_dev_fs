@@ -1,0 +1,9 @@
+work/
+build/
+.cache
+.config
+*.cmd
+*.o
+*.mod
+*.order
+compile_commands.json
