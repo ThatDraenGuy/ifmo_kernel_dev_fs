@@ -31,6 +31,8 @@ struct hahafs_inode {
 
 #define INO_FIRST_SECTOR 1
 #define inode_block_idx(sb_info, file_idx) \
-	INO_FIRST_SECTOR + (file_idx / sb_info->inodes_per_block)
+	(INO_FIRST_SECTOR + (file_idx / sb_info->inodes_per_block))
+#define inode_size(sb_info) \
+	(sizeof(struct hahafs_inode) + sb_info->file_name_len)
 
 #endif //_HAHAFS_INODE_H

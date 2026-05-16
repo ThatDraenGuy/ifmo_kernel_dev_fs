@@ -28,7 +28,8 @@ static void hahafs_put_super(struct super_block *sb)
 static const struct super_operations hahafs_super_ops = {
 	.alloc_inode = hahafs_alloc_inode,
 	.destroy_inode = hahafs_destroy_inode,
-	.put_super = hahafs_put_super
+	.put_super = hahafs_put_super,
+	.write_inode = hahafs_write_inode
 };
 
 static bool check_sb_equal(struct hahafs_super_block *fst_haha_sb,
@@ -133,11 +134,14 @@ int hahafs_fill_super(struct super_block *sb, void *data, int silent)
 
 	root_dentry = d_make_root(root_inode);
 	if (!root_dentry)
-		goto cleanup_sb2;
+		goto cleanup_inode;
 	sb->s_root = root_dentry;
 
+	printk(LOG_INFO "successfully filled superblock\n");
 	return 0;
 
+cleanup_inode:
+	iput(root_inode);
 cleanup_sb2:
 	brelse(sb_info->sb2_buf);
 cleanup_sb1:

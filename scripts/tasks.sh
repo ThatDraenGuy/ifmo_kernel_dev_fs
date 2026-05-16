@@ -65,6 +65,7 @@ done
 : ${SPINNER:=1}
 : ${IMAGE_DIR:="${WORK_DIR}/image"}
 : ${IMAGE_PATH:="${IMAGE_DIR}/debian-${TARGET_ARCH}.img"}
+: ${DISK_IMAGE_PATH:="${IMAGE_DIR}/disk.img"}
 : ${TRACER_PATH:="${SCRIPT_DIR}/autostart/tracer.stp"}
 if [[ "$TERM_PROGRAM" == "vscode" ]]; then
   : ${CLEAR:=1}
@@ -136,7 +137,9 @@ fi
     -net nic,model=virtio-net-pci -net user,hostfwd=tcp::5555-:22 \
     -virtfs local,path=/,mount_tag=hostfs,security_model=none,multidevs=remap \
     -append \"console=${SERIAL_TTY},115200 root=${ROOT_MNT} rw nokaslr init=/lib/systemd/systemd debug systemd.log_level=info ${KERNEL_CMDLINE_EXTRA}\" \
-    -drive file=${IMAGE_PATH},format=raw -kernel ${KERNEL_PATH} ${VM_START_ARGS}"}
+    -drive file=${IMAGE_PATH},format=raw \
+    -drive file=${DISK_IMAGE_PATH},if=virtio,format=raw \
+    -kernel ${KERNEL_PATH} ${VM_START_ARGS}"}
 
 case "${COMMAND}" in
 # Virtual machine life-cycle
