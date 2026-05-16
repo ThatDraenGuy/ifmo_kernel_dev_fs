@@ -10,7 +10,10 @@ void hahafs_kill_super(struct super_block *sb);
 struct hahafs_sb_info {
 	__u8 version;
 	__u32 file_sector_count;
+	__u32 file_name_len;
 	__u32 snd_superblock_offset;
+	__u32 inodes_per_block;
+	__u32 files_count;
 	struct buffer_head *sb1_buf;
 	struct buffer_head *sb2_buf;
 };
@@ -22,6 +25,7 @@ struct hahafs_super_block {
 	unsigned long magic;
 	__u8 version;
 	__u32 file_sector_count;
+	__u32 file_name_len;
 	__u32 snd_superblock_offset;
 };
 
