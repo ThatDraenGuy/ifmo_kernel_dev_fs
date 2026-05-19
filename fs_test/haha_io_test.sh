@@ -12,9 +12,9 @@ echo "writing random numbers into files..."
 for file in `ls $fs`
 do
 	if [ -f $fs/$file ];then
-		num = $RANDOM
+		num=$RANDOM
 		echo "writing $num into $fs/$file"
-		echo "$RANDOM" > $fs/$file
+		echo $num > $fs/$file
 	fi
 done
 
