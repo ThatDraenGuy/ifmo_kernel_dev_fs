@@ -14,8 +14,6 @@ struct hahafs_sb_info {
 	__u32 snd_superblock_offset;
 	__u32 inodes_per_block;
 	__u32 files_count;
-	struct buffer_head *sb1_buf;
-	struct buffer_head *sb2_buf;
 };
 
 //#define HAHAFS_SB_MAGIC 0xB0BAFE77
