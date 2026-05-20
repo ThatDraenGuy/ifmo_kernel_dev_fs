@@ -3,9 +3,11 @@
 #include "asm-generic/errno-base.h"
 #include "common.h"
 #include "fs.h"
+#include "hash.h"
 #include "inode.h"
 #include "linux/blkdev.h"
 #include "linux/buffer_head.h"
+#include "linux/container_of.h"
 #include "linux/dcache.h"
 #include "linux/err.h"
 #include "linux/fs.h"
@@ -35,6 +37,10 @@ static const struct super_operations hahafs_super_ops = {
 static bool check_sb_equal(struct hahafs_super_block *fst_haha_sb,
 			   struct hahafs_super_block *snd_haha_sb)
 {
+	if (fst_haha_sb->hash != snd_haha_sb->hash) {
+		printk(LOG_ERR "superblock hash mismatch\n");
+		return false;
+	}
 	if (fst_haha_sb->version != snd_haha_sb->version) {
 		printk(LOG_ERR "superblock version mismatch\n");
 		return false;
@@ -73,10 +79,13 @@ int hahafs_fill_super(struct super_block *sb, void *data, int silent)
 		printk(LOG_ERR "error reading superblock1\n");
 		goto cleanup_sb_info;
 	}
-
 	fst_haha_sb = (struct hahafs_super_block *)sb_info->sb1_buf->b_data;
 	if (fst_haha_sb->magic != HAHAFS_SB_MAGIC) {
 		printk(LOG_ERR "invalid magic superblock1\n");
+		goto cleanup_sb1;
+	}
+	if (fst_haha_sb->hash != sb_hash(fst_haha_sb)) {
+		printk(LOG_ERR "hash mismatch superblock1\n");
 		goto cleanup_sb1;
 	}
 
@@ -86,10 +95,13 @@ int hahafs_fill_super(struct super_block *sb, void *data, int silent)
 		printk(LOG_ERR "error reading superblock2\n");
 		goto cleanup_sb_info;
 	}
-
 	snd_haha_sb = (struct hahafs_super_block *)sb_info->sb2_buf->b_data;
 	if (snd_haha_sb->magic != HAHAFS_SB_MAGIC) {
 		printk(LOG_ERR "invalid magic superblock2\n");
+		goto cleanup_sb1;
+	}
+	if (snd_haha_sb->hash != sb_hash(snd_haha_sb)) {
+		printk(LOG_ERR "hash mismatch superblock2\n");
 		goto cleanup_sb1;
 	}
 

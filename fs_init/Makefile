@@ -1,4 +1,3 @@
-NAME = lab
 CC = clang
 CCFLAGS = -std=c99 -Wall -Werror -pedantic -g
 DD = dd

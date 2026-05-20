@@ -23,6 +23,7 @@ struct hahafs_sb_info {
 
 struct hahafs_super_block {
 	unsigned long magic;
+	__u32 hash;
 	__u8 version;
 	__u32 file_sector_count;
 	__u32 file_name_len;

@@ -4,7 +4,7 @@ KERNEL_DIR := $(ROOT_DIR)/build/linux-6.12.74
 MAKE := make -j`nproc` LLVM=1 LLVM_IAS=1 CC='ccache clang' -C $(KERNEL_DIR)
 
 MODULE_NAME := hahafs
-$(MODULE_NAME)-y := src/main.o src/file.o src/fs.o src/inode.o src/superblock.o
+$(MODULE_NAME)-y := src/main.o src/file.o src/fs.o src/inode.o src/superblock.o src/hash.o
 obj-m := $(MODULE_NAME).o
 
 BUILD_DIR := build

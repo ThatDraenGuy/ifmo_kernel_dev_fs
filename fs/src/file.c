@@ -3,71 +3,17 @@
 #include "asm-generic/errno-base.h"
 #include "common.h"
 #include "fs.h"
+#include "hash.h"
 #include "inode.h"
 #include "linux/buffer_head.h"
 #include "linux/container_of.h"
 #include "linux/fs.h"
 #include "linux/init.h"
 #include "linux/minmax.h"
-#include "linux/mm_types.h"
 #include "linux/mpage.h"
 #include "linux/types.h"
 #include "linux/uaccess.h"
 #include "superblock.h"
-
-static int hahafs_file_get_block(struct inode *inode, sector_t block,
-				 struct buffer_head *buf_res, int create)
-{
-	struct super_block *sb = inode->i_sb;
-	struct hahafs_sb_info *sb_info = sb->s_fs_info;
-	struct hahafs_inode_info *hii =
-		container_of(inode, struct hahafs_inode_info, inode);
-
-	if (block >= sb_info->file_sector_count)
-		return -EFBIG;
-
-	sector_t sector = hii->extent.start + block;
-
-	if (sector >= hii->extent.skip)
-		sector += 1;
-
-	map_bh(buf_res, sb, sector);
-	return 0;
-}
-
-static void hahafs_readahead(struct readahead_control *rac)
-{
-	mpage_readahead(rac, hahafs_file_get_block);
-}
-
-static int hahafs_write_begin(struct file *file, struct address_space *mapping,
-			      loff_t pos, unsigned int len,
-			      struct folio **foliop, void **fsdata)
-{
-	//TODO check blocks num
-	return block_write_begin(mapping, pos, len, foliop,
-				 hahafs_file_get_block);
-}
-
-static int hahafs_write_end(struct file *file, struct address_space *mapping,
-			    loff_t pos, unsigned int len, unsigned int copied,
-			    struct folio *foliop, void *fsdata)
-{
-	//TODO hash recalc
-	int ret = generic_write_end(file, mapping, pos, len, copied, foliop,
-				    fsdata);
-	if (ret < len) {
-		printk(LOG_ERR "wrote less than requested\n");
-		return ret;
-	}
-	return ret;
-}
-
-const struct address_space_operations hahafs_aops = {
-	.readahead = hahafs_readahead,
-	.write_begin = hahafs_write_begin,
-	.write_end = hahafs_write_end
-};
 
 static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 			   loff_t *ppos)
@@ -115,6 +61,7 @@ static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 static ssize_t hahafs_write(struct file *file, const char __user *buf,
 			    size_t len, loff_t *ppos)
 {
+	int ret;
 	ssize_t already_written = 0;
 	struct inode *inode = file_inode(file);
 	struct hahafs_inode_info *hii =
@@ -161,6 +108,9 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 	}
 
 	inode->i_size = max(*ppos, inode->i_size);
+	ret = update_file_hash(file);
+	if (ret)
+		return ret;
 	mark_inode_dirty(inode);
 	return already_written;
 }

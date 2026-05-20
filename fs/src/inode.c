@@ -3,6 +3,8 @@
 #include "asm-generic/errno-base.h"
 #include "common.h"
 #include "file.h"
+#include "fs.h"
+#include "linux/blkdev.h"
 #include "linux/buffer_head.h"
 #include "linux/container_of.h"
 #include "linux/dcache.h"
@@ -14,7 +16,146 @@
 #include "linux/slab.h"
 #include "linux/stat.h"
 #include "linux/types.h"
+#include "linux/uaccess.h"
 #include "superblock.h"
+
+static struct inode *find_by_name(struct super_block *sb, char *name)
+{
+	struct hahafs_sb_info *sb_info = sb->s_fs_info;
+
+	for (unsigned long file_idx = 0; file_idx < sb_info->files_count;
+	     file_idx++) {
+		sector_t block_idx = inode_block_idx(sb_info, file_idx);
+		struct buffer_head *buf = sb_bread(sb, block_idx);
+
+		if (!buf) {
+			printk(LOG_ERR "error reading from disk\n");
+			return ERR_PTR(-EIO);
+		}
+
+		struct hahafs_inode *disk_inode =
+			(struct hahafs_inode
+				 *)(buf->b_data +
+				    inode_size(sb_info) *
+					    (file_idx %
+					     sb_info->inodes_per_block));
+
+		if (strcmp(name, disk_inode->name) == 0) {
+			struct inode *inode = hahafs_iget(sb, file_idx + 1);
+
+			if (IS_ERR(inode))
+				return ERR_CAST(inode);
+			brelse(buf);
+			return inode;
+		}
+
+		brelse(buf);
+	}
+
+	printk(LOG_ERR "no file named %s\n", name);
+	return ERR_PTR(-ENOENT);
+}
+
+static long hahafs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int ret;
+	char argbuf[128];
+	struct super_block *sb = file->f_inode->i_sb;
+	struct hahafs_sb_info *sb_info = sb->s_fs_info;
+
+	switch (cmd) {
+	case IOC_CLEAN: {
+		for (__u32 file_idx = 0; file_idx < sb_info->files_count;
+		     file_idx++) {
+			struct inode *inode = hahafs_iget(sb, file_idx + 1);
+			struct hahafs_inode_info *hii = container_of(
+				inode, struct hahafs_inode_info, inode);
+
+			if (IS_ERR(inode))
+				return PTR_ERR(inode);
+
+			inode->i_size = 0;
+			hii->hash = 0;
+
+			mark_inode_dirty(inode);
+			iput(inode);
+		}
+		break;
+	}
+	case IOC_ERASE: {
+		sector_t count = bdev_nr_sectors(sb->s_bdev);
+
+		for (sector_t block_idx = 0; block_idx < count; block_idx++) {
+			struct buffer_head *buf = sb_bread(sb, block_idx);
+
+			if (!buf) {
+				printk(LOG_ERR "error reading from disk\n");
+				return -EIO;
+			}
+
+			memset(buf->b_data, 0, HAHAFS_BLOCK_SIZE);
+			mark_buffer_dirty(buf);
+			brelse(buf);
+		}
+		break;
+	}
+	case IOC_META: {
+		ret = strncpy_from_user(argbuf, (char *)arg,
+					sb_info->file_name_len);
+		if (ret < 0)
+			return -EFAULT;
+
+		struct inode *inode = find_by_name(sb, argbuf);
+		if (IS_ERR(inode))
+			return PTR_ERR(inode);
+
+		struct hahafs_inode_info *hii =
+			container_of(inode, struct hahafs_inode_info, inode);
+
+		sprintf(argbuf, "hash: %u", hii->hash);
+		iput(inode);
+		ret = copy_to_user((char *)arg, argbuf, strlen(argbuf));
+		if (ret)
+			return -EFAULT;
+		break;
+	}
+	case IOC_SECTORS: {
+		ret = strncpy_from_user(argbuf, (char *)arg,
+					sb_info->file_name_len);
+		if (ret < 0)
+			return -EFAULT;
+
+		struct inode *inode = find_by_name(sb, argbuf);
+		if (IS_ERR(inode))
+			return PTR_ERR(inode);
+
+		struct hahafs_inode_info *hii =
+			container_of(inode, struct hahafs_inode_info, inode);
+		sector_t end = hii->extent.start + sb_info->file_sector_count;
+
+		if (hii->extent.start < sb_info->snd_superblock_offset &&
+		    end > sb_info->snd_superblock_offset) {
+			sprintf(argbuf,
+				"Sectors from %llu to %llu with sector %u skipped\n",
+				hii->extent.start, end + 1,
+				sb_info->snd_superblock_offset);
+		} else {
+			sprintf(argbuf, "Sectors from %llu to %llu\n",
+				hii->extent.start, end);
+		}
+
+		iput(inode);
+		ret = copy_to_user((char *)arg, argbuf, strlen(argbuf));
+		if (ret)
+			return -EFAULT;
+		break;
+	}
+	default: {
+		return -ENOTTY;
+	}
+	}
+	return 0;
+}
 
 static int hahafs_iterate(struct file *dir, struct dir_context *ctx)
 {
@@ -57,80 +198,21 @@ static struct dentry *hahafs_lookup(struct inode *dir, struct dentry *dentry,
 				    unsigned int flags)
 {
 	struct super_block *sb = dentry->d_sb;
-	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
 	dentry->d_op = sb->s_root->d_op;
 
-	for (unsigned long file_idx = 0; file_idx < sb_info->files_count;
-	     file_idx++) {
-		sector_t block_idx = inode_block_idx(sb_info, file_idx);
-		struct buffer_head *buf = sb_bread(sb, block_idx);
+	struct inode *inode = find_by_name(sb, dentry->d_name.name);
 
-		if (!buf) {
-			printk(LOG_ERR "error reading from disk\n");
-			return ERR_PTR(-EIO);
-		}
-
-		struct hahafs_inode *disk_inode =
-			(struct hahafs_inode
-				 *)(buf->b_data +
-				    inode_size(sb_info) *
-					    (file_idx %
-					     sb_info->inodes_per_block));
-
-		if (strcmp(dentry->d_name.name, disk_inode->name) == 0) {
-			struct inode *inode = hahafs_iget(sb, file_idx + 1);
-
-			if (IS_ERR(inode))
-				return ERR_CAST(inode);
-			d_add(dentry, inode);
-			brelse(buf);
-			return dentry;
-		}
-
-		brelse(buf);
-	}
-
-	// for (sector_t block_idx = INO_FIRST_SECTOR;
-	//      block_idx < sb_info->files_count / sb_info->inodes_per_block + 1;
-	//      block_idx++) {
-	// 	buf = sb_bread(sb, block_idx);
-	// 	if (!buf)
-	// 		return ERR_PTR(-EIO);
-
-	// 	for (int inode_idx = 0;
-	// 	     inode_idx < sb_info->inodes_per_block &&
-	// 	     (block_idx - INO_FIRST_SECTOR) *
-	// 				     sb_info->inodes_per_block +
-	// 			     inode_idx <
-	// 		     sb_info->files_count;
-	// 	     inode_idx++) {
-	// 		struct hahafs_inode *disk_inode =
-	// 			(struct hahafs_inode
-	// 				 *)(buf->b_data +
-	// 				    inode_idx * inode_size(sb_info));
-	// 		if (strcmp(dentry->d_name.name, disk_inode->name)) {
-	// 			unsigned long file_ino =
-	// 				(block_idx - INO_FIRST_SECTOR) *
-	// 					sb_info->inodes_per_block +
-	// 				inode_idx + 1;
-	// 			struct inode *inode = hahafs_iget(sb, file_ino);
-
-	// 			if (IS_ERR(inode))
-	// 				return ERR_CAST(inode);
-	// 			d_add(dentry, inode);
-	// 			brelse(buf);
-	// 			return dentry;
-	// 		}
-	// 	}
-	// 	brelse(buf);
-	// }
+	if (IS_ERR(inode))
+		return ERR_CAST(inode);
+	d_add(dentry, inode);
 	return dentry;
 }
 
 static const struct file_operations hahafs_dir_ops = {
 	.read = generic_read_dir,
 	.iterate_shared = hahafs_iterate,
+	.unlocked_ioctl = hahafs_ioctl,
 };
 
 static const struct inode_operations hahafs_dir_inode_opds = {
@@ -200,12 +282,12 @@ int hahafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 						 sb_info->inodes_per_block));
 
 	disk_inode->size = inode->i_size;
-	disk_inode->hash = hii->hash; //TODO recalc hash
+	disk_inode->hash = hii->hash;
 
 	mark_buffer_dirty(buf);
 	brelse(buf);
-	printk(LOG_INFO "wrote inode %lu\n with size %lld", inode->i_ino,
-	       inode->i_size);
+	printk(LOG_INFO "wrote inode %lu\n with size %lld; hash %u",
+	       inode->i_ino, inode->i_size, hii->hash);
 	return 0;
 }
 
@@ -260,7 +342,6 @@ struct inode *hahafs_iget(struct super_block *sb, unsigned long ino)
 
 		inode->i_mode |= S_IFREG;
 		inode->i_fop = &hahafs_file_ops;
-		inode->i_mapping->a_ops = &hahafs_aops;
 		inode->i_size = disk_inode->size;
 		hii->hash = disk_inode->hash;
 		brelse(buf);

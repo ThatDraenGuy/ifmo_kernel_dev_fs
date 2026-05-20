@@ -10,6 +10,7 @@
 
 struct hahafs_super_block {
 	unsigned long magic;
+	uint32_t hash;
 	uint8_t version;
 	uint32_t file_sector_count;
 	uint32_t file_name_len;
@@ -23,6 +24,18 @@ struct hahafs_inode {
 };
 
 char *inode_buf[128] = {};
+
+uint32_t haha_hash(char *data, ssize_t size)
+{
+	uint64_t h = 0xcbf29ce484222325ULL;
+
+	for (ssize_t i = 0; i < size; i++) {
+		h ^= (unsigned char)(*(data + i));
+		h *= 0x100000001b3ULL;
+	}
+	/* Fold high 32 bits into low 32 bits to mix the full 64-bit result */
+	return (uint32_t)(h ^ (h >> 32));
+}
 
 int main(int argc, char **argv)
 {
@@ -46,6 +59,10 @@ int main(int argc, char **argv)
 	sb.file_sector_count = atoi(argv[5]);
 	sb.version = 1;
 	sb.magic = HAHAFS_SB_MAGIC;
+	sb.hash = haha_hash((char *)&sb + sizeof(unsigned long) +
+				    sizeof(uint32_t),
+			    sizeof(struct hahafs_super_block) -
+				    sizeof(unsigned long) - sizeof(uint32_t));
 
 	file = fopen(disk_name, "w+");
 	if (!file) {
