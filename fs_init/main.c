@@ -71,7 +71,6 @@ int main(int argc, char **argv)
 
 	memset(buffer, 0, HAHAFS_BLOCK_SIZE);
 	memset(inode_buf, 0, 128);
-	//TODO zero out disk
 
 	//superblocks
 	if (fseek(file, 0, SEEK_SET))

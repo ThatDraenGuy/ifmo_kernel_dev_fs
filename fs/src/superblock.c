@@ -126,7 +126,6 @@ int hahafs_fill_super(struct super_block *sb, void *data, int silent)
 		goto cleanup_sb1;
 	}
 
-	//TODO check superblocks equal
 	if (!check_sb_equal(fst_haha_sb, snd_haha_sb))
 		goto cleanup_sb2;
 	if (!check_module_params(fst_haha_sb))
