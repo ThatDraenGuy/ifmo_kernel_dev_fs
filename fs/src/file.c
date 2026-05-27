@@ -1,6 +1,7 @@
 
 #include "file.h"
 #include "asm-generic/errno-base.h"
+#include "asm-generic/fcntl.h"
 #include "common.h"
 #include "fs.h"
 #include "hash.h"
@@ -18,14 +19,18 @@
 static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 			   loff_t *ppos)
 {
+	ssize_t ret = 0;
 	ssize_t already_read = 0;
 	struct inode *inode = file_inode(file);
+
+	inode_lock(inode);
+
 	struct hahafs_inode_info *hii =
 		container_of(inode, struct hahafs_inode_info, inode);
 	struct super_block *sb = inode->i_sb;
 
 	if (*ppos > inode->i_size)
-		return 0;
+		goto cleanup_lock;
 	if (*ppos + len > inode->i_size)
 		len = inode->i_size - *ppos;
 
@@ -39,7 +44,8 @@ static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 
 		if (!disk_buf) {
 			printk(LOG_ERR "error reading from disk\n");
-			return -EIO;
+			ret = -EIO;
+			goto cleanup_lock;
 		}
 
 		size_t offset = *ppos % HAHAFS_BLOCK_SIZE;
@@ -48,29 +54,41 @@ static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 		if (copy_to_user(buf + already_read, disk_buf->b_data + offset,
 				 to_read)) {
 			brelse(disk_buf);
-			return -EFAULT;
+			ret = -EFAULT;
+			goto cleanup_lock;
 		}
 		brelse(disk_buf);
 		already_read += to_read;
 		len -= to_read;
 		*ppos += to_read;
 	}
-	return already_read;
+
+	ret = already_read;
+
+cleanup_lock:
+	inode_unlock(inode);
+	return ret;
 }
 
 static ssize_t hahafs_write(struct file *file, const char __user *buf,
 			    size_t len, loff_t *ppos)
 {
-	int ret;
+	ssize_t ret = 0;
 	ssize_t already_written = 0;
 	struct inode *inode = file_inode(file);
+
+	inode_lock(inode);
+
 	struct hahafs_inode_info *hii =
 		container_of(inode, struct hahafs_inode_info, inode);
 	struct super_block *sb = inode->i_sb;
 	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
+	if (file->f_flags & O_APPEND)
+		*ppos = inode->i_size;
+
 	if (*ppos > inode->i_size)
-		return 0;
+		goto cleanup_lock;
 
 	len = min_t(size_t, len,
 		    HAHAFS_BLOCK_SIZE * sb_info->file_sector_count);
@@ -85,7 +103,8 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 
 		if (!disk_buf) {
 			printk(LOG_ERR "error reading from disk\n");
-			return -EIO;
+			ret = -EIO;
+			goto cleanup_lock;
 		}
 
 		size_t offset = *ppos % HAHAFS_BLOCK_SIZE;
@@ -95,7 +114,8 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 		if (copy_from_user(disk_buf->b_data + offset,
 				   buf + already_written, to_write)) {
 			brelse(disk_buf);
-			return -EFAULT;
+			ret = -EFAULT;
+			goto cleanup_lock;
 		}
 		mark_buffer_dirty(disk_buf);
 		sync_dirty_buffer(disk_buf);
@@ -110,9 +130,13 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 	inode->i_size = max(*ppos, inode->i_size);
 	ret = update_file_hash(file);
 	if (ret)
-		return ret;
+		goto cleanup_lock;
 	mark_inode_dirty(inode);
-	return already_written;
+	ret = already_written;
+
+cleanup_lock:
+	inode_unlock(inode);
+	return ret;
 }
 
 const struct file_operations hahafs_file_ops = { .owner = THIS_MODULE,
