@@ -19,7 +19,7 @@
 #include "linux/uaccess.h"
 #include "superblock.h"
 
-static struct inode *find_by_name(struct super_block *sb, char *name)
+static struct inode *find_by_name(struct super_block *sb, const char *name)
 {
 	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
