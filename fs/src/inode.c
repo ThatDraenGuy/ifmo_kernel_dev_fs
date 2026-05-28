@@ -206,6 +206,7 @@ static struct dentry *hahafs_lookup(struct inode *dir, struct dentry *dentry,
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 	d_add(dentry, inode);
+	dget(dentry);
 	return dentry;
 }
 
