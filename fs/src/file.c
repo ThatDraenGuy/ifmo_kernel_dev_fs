@@ -91,7 +91,7 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 		goto cleanup_lock;
 
 	len = min_t(size_t, len,
-		    HAHAFS_BLOCK_SIZE * sb_info->file_sector_count);
+		    HAHAFS_BLOCK_SIZE * sb_info->file_sector_count - *ppos);
 
 	sector_t block_idx = hii->extent.start + *ppos / HAHAFS_BLOCK_SIZE;
 

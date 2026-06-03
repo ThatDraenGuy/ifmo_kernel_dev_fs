@@ -4,7 +4,7 @@ DD = dd
 DISK = ../work/image/disk.img
 
 default_disk: haha_init empty
-	./haha_init $(DISK) 100 64 16 10
+	./haha_init $(DISK) 1000 64 16 10
 
 haha_init: main.c
 	$(CC) $< -o $@

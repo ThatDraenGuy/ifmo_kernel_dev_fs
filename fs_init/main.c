@@ -64,6 +64,33 @@ int main(int argc, char **argv)
 			    sizeof(struct hahafs_super_block) -
 				    sizeof(unsigned long) - sizeof(uint32_t));
 
+	size_t inode_size = sizeof(struct hahafs_inode) + sb.file_name_len;
+	uint32_t inodes_per_block = HAHAFS_BLOCK_SIZE / inode_size;
+	uint32_t free_sectors = sectors_count - 2; //2 сектора на суперблоки
+	// наборы из полностью заполненного сектора под иноды файлов и секторов под данные этих файлов
+	uint32_t fully_filled =
+		free_sectors / (1 + sb.file_sector_count * inodes_per_block);
+	// оставшиеся сектора
+	uint32_t remaining =
+		free_sectors % (1 + sb.file_sector_count * inodes_per_block);
+
+	// полные наборы + последний неполностью заполненный сектор под иноды файлов
+	uint32_t files_count = fully_filled * inodes_per_block +
+			       (remaining - 1) / sb.file_sector_count;
+
+	uint32_t last_inode_block = 1 + (files_count / inodes_per_block);
+	if (last_inode_block >= sb.snd_superblock_offset) {
+		fprintf(stderr,
+			"snd_superblock_offset is toot small, overlapping with inode info!");
+		return 1;
+	}
+	int max_possible_filename_len =
+		snprintf(NULL, 0, "file%d", files_count - 1);
+	if (max_possible_filename_len >= sb.file_name_len) {
+		fprintf(stderr, "file_name_len is too short!");
+		return 1;
+	}
+
 	file = fopen(disk_name, "w+");
 	if (!file) {
 		goto file_error;
@@ -81,20 +108,6 @@ int main(int argc, char **argv)
 		goto file_error;
 	if (!fwrite(&sb, sizeof(struct hahafs_super_block), 1, file))
 		goto file_error;
-
-	size_t inode_size = sizeof(struct hahafs_inode) + sb.file_name_len;
-	uint32_t inodes_per_block = HAHAFS_BLOCK_SIZE / inode_size;
-	uint32_t free_sectors = sectors_count - 2; //2 сектора на суперблоки
-	// наборы из полностью заполненного сектора под иноды файлов и секторов под данные этих файлов
-	uint32_t fully_filled =
-		free_sectors / (1 + sb.file_sector_count * inodes_per_block);
-	// оставшиеся сектора
-	uint32_t remaining =
-		free_sectors % (1 + sb.file_sector_count * inodes_per_block);
-
-	// полные наборы + последний неполностью заполненный сектор под иноды файлов
-	uint32_t files_count = fully_filled * inodes_per_block +
-			       (remaining - 1) / sb.file_sector_count;
 
 	if (fseek(file, HAHAFS_BLOCK_SIZE, SEEK_SET))
 		goto file_error;
