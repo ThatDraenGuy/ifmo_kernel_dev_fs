@@ -28,6 +28,12 @@ static ssize_t hahafs_read(struct file *file, char __user *buf, size_t len,
 	struct hahafs_inode_info *hii =
 		container_of(inode, struct hahafs_inode_info, inode);
 	struct super_block *sb = inode->i_sb;
+	struct hahafs_sb_info *sb_info = sb->s_fs_info;
+
+	if (sb_info->is_invalid) {
+		ret = -ESTALE;
+		goto cleanup_lock;
+	}
 
 	if (*ppos > inode->i_size)
 		goto cleanup_lock;
@@ -83,6 +89,11 @@ static ssize_t hahafs_write(struct file *file, const char __user *buf,
 		container_of(inode, struct hahafs_inode_info, inode);
 	struct super_block *sb = inode->i_sb;
 	struct hahafs_sb_info *sb_info = sb->s_fs_info;
+
+	if (sb_info->is_invalid) {
+		inode_unlock(inode);
+		return -ESTALE;
+	}
 
 	if (file->f_flags & O_APPEND)
 		*ppos = inode->i_size;

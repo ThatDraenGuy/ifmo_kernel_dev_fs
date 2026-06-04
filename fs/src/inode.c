@@ -1,6 +1,7 @@
 
 #include "inode.h"
 #include "asm-generic/errno-base.h"
+#include "asm-generic/errno.h"
 #include "common.h"
 #include "file.h"
 #include "fs.h"
@@ -63,6 +64,8 @@ static long hahafs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct super_block *sb = file->f_inode->i_sb;
 	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
+	if (sb_info->is_invalid)
+		return -ESTALE;
 	switch (cmd) {
 	case IOC_CLEAN: {
 		for (__u32 file_idx = 0; file_idx < sb_info->files_count;
@@ -97,6 +100,10 @@ static long hahafs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			mark_buffer_dirty(buf);
 			brelse(buf);
 		}
+		shrink_dcache_sb(sb);
+		sync_blockdev(sb->s_bdev);
+		invalidate_bdev(sb->s_bdev);
+		sb_info->is_invalid = true;
 		break;
 	}
 	case IOC_META: {
@@ -163,6 +170,8 @@ static int hahafs_iterate(struct file *dir, struct dir_context *ctx)
 	struct super_block *sb = inode->i_sb;
 	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
+	if (sb_info->is_invalid)
+		return -ESTALE;
 	if (!S_ISDIR(inode->i_mode)) {
 		printk(LOG_ERR "iterate on a file\n");
 		return -ENOTDIR;
@@ -198,7 +207,10 @@ static struct dentry *hahafs_lookup(struct inode *dir, struct dentry *dentry,
 				    unsigned int flags)
 {
 	struct super_block *sb = dentry->d_sb;
+	struct hahafs_sb_info *sb_info = sb->s_fs_info;
 
+	if (sb_info->is_invalid)
+		return ERR_PTR(-ESTALE);
 	dentry->d_op = sb->s_root->d_op;
 
 	struct inode *inode = find_by_name(sb, dentry->d_name.name);

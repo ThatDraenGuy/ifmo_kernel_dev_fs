@@ -155,6 +155,7 @@ int hahafs_fill_super(struct super_block *sb, void *data, int silent)
 	// полные наборы + последний неполностью заполненный сектор под иноды файлов
 	sb_info->files_count = fully_filled * sb_info->inodes_per_block +
 			       (remaining - 1) / sb_info->file_sector_count;
+	sb_info->is_invalid = false;
 
 	sb->s_magic = HAHAFS_SB_MAGIC;
 	sb->s_op = &hahafs_super_ops;
